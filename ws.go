@@ -191,10 +191,18 @@ func (c *Client) wsConnect(ws *wsState) error {
 		}
 		data, err := json.Marshal(sub)
 		if err != nil {
+			ws.mu.Lock()
+			ws.conn = nil
+			ws.connected = false
+			ws.mu.Unlock()
 			conn.Close()
 			return fmt.Errorf("marshal subscribe: %w", err)
 		}
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			ws.mu.Lock()
+			ws.conn = nil
+			ws.connected = false
+			ws.mu.Unlock()
 			conn.Close()
 			return fmt.Errorf("send subscribe: %w", err)
 		}
