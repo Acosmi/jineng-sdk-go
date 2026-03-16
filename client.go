@@ -22,6 +22,7 @@ type Client struct {
 	store     TokenStore
 	http      *http.Client
 	mu        sync.RWMutex
+	ws        *wsState // WebSocket 长连接状态 (nil = 未连接)
 }
 
 // Config 客户端配置
