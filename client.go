@@ -435,6 +435,15 @@ func (c *Client) UploadSkill(ctx context.Context, zipData []byte, scope, intent 
 	}
 	defer resp.Body.Close()
 
+	// 401 时刷新 token 并重试一次 (与 doJSON 行为一致)
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+		if refreshErr := c.forceRefresh(ctx); refreshErr != nil {
+			return nil, fmt.Errorf("upload: unauthorized and refresh failed: %w", refreshErr)
+		}
+		return c.UploadSkill(ctx, zipData, scope, intent)
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("upload: HTTP %d: %s", resp.StatusCode, string(bodyBytes))
