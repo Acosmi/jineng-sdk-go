@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -279,18 +280,18 @@ func (c *Client) ChatStream(ctx context.Context, modelID string, req ChatRequest
 // BrowseSkillStore 浏览技能商店 (公共区已审核技能)
 func (c *Client) BrowseSkillStore(ctx context.Context, query SkillStoreQuery) ([]SkillStoreItem, error) {
 	path := "/skill-store"
-	params := make([]string, 0)
+	qv := url.Values{}
 	if query.Category != "" {
-		params = append(params, "category="+query.Category)
+		qv.Set("category", query.Category)
 	}
 	if query.Keyword != "" {
-		params = append(params, "keyword="+query.Keyword)
+		qv.Set("keyword", query.Keyword)
 	}
 	if query.Tag != "" {
-		params = append(params, "tag="+query.Tag)
+		qv.Set("tag", query.Tag)
 	}
-	if len(params) > 0 {
-		path += "?" + strings.Join(params, "&")
+	if encoded := qv.Encode(); encoded != "" {
+		path += "?" + encoded
 	}
 
 	var resp APIResponse[[]SkillStoreItem]
@@ -360,6 +361,128 @@ func (c *Client) DownloadSkill(ctx context.Context, skillID string) ([]byte, str
 	}
 
 	return data, filename, nil
+}
+
+// ---------- API: Skill Store V3 ----------
+
+// GetSkillSummary 获取技能统计概览 (installed/created/total/storeAvailable)
+func (c *Client) GetSkillSummary(ctx context.Context) (*SkillSummary, error) {
+	var resp APIResponse[SkillSummary]
+	if err := c.doJSON(ctx, http.MethodGet, "/skills/summary", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// BrowseSkills 浏览公共技能商店 (V3 分页接口)
+func (c *Client) BrowseSkills(ctx context.Context, page, pageSize int, category, keyword, tag string) (*SkillBrowseResponse, error) {
+	qv := url.Values{}
+	qv.Set("page", fmt.Sprintf("%d", page))
+	qv.Set("pageSize", fmt.Sprintf("%d", pageSize))
+	if category != "" {
+		qv.Set("category", category)
+	}
+	if keyword != "" {
+		qv.Set("keyword", keyword)
+	}
+	if tag != "" {
+		qv.Set("tag", tag)
+	}
+
+	var resp APIResponse[SkillBrowseResponse]
+	if err := c.doJSON(ctx, http.MethodGet, "/skill-store?"+qv.Encode(), nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// UploadSkill 上传技能 ZIP 包
+// scope: "TENANT" (租户级)
+// intent: "PERSONAL" (仅自己用) 或 "PUBLIC_INTENT" (走认证→公开)
+func (c *Client) UploadSkill(ctx context.Context, zipData []byte, scope, intent string) (*SkillStoreItem, error) {
+	token, err := c.ensureToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// multipart form
+	var buf bytes.Buffer
+	boundary := "----AcosmiBoundary"
+	w := func(field, value string) {
+		buf.WriteString("--" + boundary + "\r\n")
+		buf.WriteString(fmt.Sprintf("Content-Disposition: form-data; name=\"%s\"\r\n\r\n", field))
+		buf.WriteString(value + "\r\n")
+	}
+	w("scope", scope)
+	w("intent", intent)
+	buf.WriteString("--" + boundary + "\r\n")
+	buf.WriteString("Content-Disposition: form-data; name=\"file\"; filename=\"skill.zip\"\r\n")
+	buf.WriteString("Content-Type: application/zip\r\n\r\n")
+	buf.Write(zipData)
+	buf.WriteString("\r\n--" + boundary + "--\r\n")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.apiURL("/skill-store/upload"), &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upload: HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Data struct {
+			Skill SkillStoreItem `json:"skill"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result.Data.Skill, nil
+}
+
+// CertifySkill 触发技能认证管线 (异步)
+func (c *Client) CertifySkill(ctx context.Context, skillID string) error {
+	return c.doJSON(ctx, http.MethodPost, "/skill-store/"+skillID+"/certify", nil, nil)
+}
+
+// GetCertificationStatus 查询技能认证状态
+func (c *Client) GetCertificationStatus(ctx context.Context, skillID string) (*CertificationStatus, error) {
+	var resp APIResponse[CertificationStatus]
+	if err := c.doJSON(ctx, http.MethodGet, "/skill-store/"+skillID+"/certification", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// ---------- API: Skill Generator (V3) ----------
+
+// GenerateSkill 根据自然语言描述生成技能定义 (基于独立 LLM)
+func (c *Client) GenerateSkill(ctx context.Context, req GenerateSkillRequest) (*GenerateSkillResult, error) {
+	var resp APIResponse[GenerateSkillResult]
+	if err := c.doJSON(ctx, http.MethodPost, "/skill-generator/generate", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
+}
+
+// OptimizeSkill 优化已有技能定义
+func (c *Client) OptimizeSkill(ctx context.Context, req OptimizeSkillRequest) (*OptimizeSkillResult, error) {
+	var resp APIResponse[OptimizeSkillResult]
+	if err := c.doJSON(ctx, http.MethodPost, "/skill-generator/optimize", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Data, nil
 }
 
 // ---------- API: Unified Tools ----------

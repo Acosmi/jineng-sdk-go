@@ -134,9 +134,11 @@ type SkillStoreItem struct {
 	Author        string  `json:"author"`
 	PublisherID   string  `json:"publisherId"`
 	IsPublished   bool    `json:"isPublished"`
-	PluginName    string  `json:"pluginName"`
-	PluginIcon    string  `json:"pluginIcon"`
-	UpdatedAt     string  `json:"updatedAt"`
+	PluginName          string  `json:"pluginName"`
+	PluginIcon          string  `json:"pluginIcon"`
+	UpdatedAt           string  `json:"updatedAt"`
+	Visibility          string  `json:"visibility,omitempty"`          // PERSONAL | TENANT | PUBLIC (V3)
+	CertificationStatus string  `json:"certificationStatus,omitempty"` // NONE | UNCERTIFIED | TESTING | CERTIFIED | FAILED (V3)
 }
 
 // SkillStoreQuery 技能商店搜索参数
@@ -144,6 +146,76 @@ type SkillStoreQuery struct {
 	Category string // ACTION | TRIGGER | TRANSFORM
 	Keyword  string
 	Tag      string
+}
+
+// SkillSummary 技能统计概览 (V3)
+type SkillSummary struct {
+	Installed      int64 `json:"installed"`
+	Created        int64 `json:"created"`
+	Total          int64 `json:"total"`
+	StoreAvailable int64 `json:"storeAvailable"`
+}
+
+// SkillBrowseResponse 技能商店分页浏览响应 (V3)
+type SkillBrowseResponse struct {
+	Items    []SkillStoreItem `json:"items"`
+	Total    int64            `json:"total"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"pageSize"`
+}
+
+// CertificationStatus 技能认证状态响应 (V3)
+type CertificationStatus struct {
+	SkillID             string      `json:"skillId"`
+	CertificationStatus string      `json:"certificationStatus"` // NONE | UNCERTIFIED | TESTING | CERTIFIED | FAILED
+	CertifiedAt         *int64      `json:"certifiedAt,omitempty"`
+	SecurityLevel       string      `json:"securityLevel,omitempty"`
+	SecurityScore       int         `json:"securityScore"`
+	Report              interface{} `json:"report,omitempty"`
+}
+
+// ---------- Skill Generator (V3) ----------
+
+// GenerateSkillRequest 技能生成请求 (基于独立 LLM)
+type GenerateSkillRequest struct {
+	Purpose     string   `json:"purpose"`
+	Examples    []string `json:"examples,omitempty"`
+	InputHints  string   `json:"inputHints,omitempty"`
+	OutputHints string   `json:"outputHints,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Language    string   `json:"language,omitempty"`
+}
+
+// GenerateSkillResult 技能生成结果
+type GenerateSkillResult struct {
+	SkillName    string   `json:"skillName"`
+	SkillKey     string   `json:"skillKey"`
+	Description  string   `json:"description"`
+	SkillMd      string   `json:"skillMd"`
+	InputSchema  string   `json:"inputSchema"`
+	OutputSchema string   `json:"outputSchema"`
+	TestCases    []string `json:"testCases"`
+	Readme       string   `json:"readme"`
+	Category     string   `json:"category"`
+	Tags         []string `json:"tags"`
+	Timeout      int      `json:"timeout"`
+}
+
+// OptimizeSkillRequest 技能优化请求
+type OptimizeSkillRequest struct {
+	SkillName    string   `json:"skillName"`
+	Description  string   `json:"description,omitempty"`
+	InputSchema  string   `json:"inputSchema,omitempty"`
+	OutputSchema string   `json:"outputSchema,omitempty"`
+	Readme       string   `json:"readme,omitempty"`
+	Aspects      []string `json:"aspects,omitempty"`
+}
+
+// OptimizeSkillResult 技能优化结果
+type OptimizeSkillResult struct {
+	OptimizedSkill GenerateSkillResult `json:"optimizedSkill"`
+	Changes        []string            `json:"changes"`
+	Score          int                 `json:"score"`
 }
 
 // ---------- Unified Tools ----------
